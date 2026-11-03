@@ -3,4 +3,4 @@
 A port of coding-buddy (MIT), itself a continuation of Claude Code's removed /buddy.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

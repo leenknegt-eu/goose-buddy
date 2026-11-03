@@ -66,5 +66,23 @@ def test_name_mention_is_word_bounded_and_case_insensitive():
 
 
 def test_streaks_use_the_goose_lines_and_the_rest_a_generic_one():
-    assert R.streak_reaction("goose", 3).startswith("HONK") and "three" in R.streak_reaction("cat", 3)
+    assert R.streak_reaction("goose", 3).startswith("HONK") and "three" in R.streak_reaction("rabbit", 3)
+    assert "left the room" in R.streak_reaction("cat", 3) and "ROOT CAUSE".lower() in R.streak_reaction("owl", 5).lower()
     assert R.streak_reaction("goose", 4) is None and R.streak_reaction("goose", 25).startswith("HONKING HAS CEASED")
+
+
+def test_recovery_combo_and_holiday_lines():
+    import time
+    assert "VICTORY" in R.recovery_reaction("goose", "error") and "FIXED" in R.recovery_reaction("pig", "error")
+    assert R.recovery_reaction("pig", "stash") is None
+    fri_3am = time.mktime((2026, 11, 6, 3, 0, 0, 0, 0, -1))
+    assert R.pick_combo("error", fri_3am, 0, lambda: 0.0) == "late-night-error"
+    assert R.pick_combo("push", fri_3am, 0, lambda: 0.0) == "friday-push"
+    assert R.pick_combo("error", fri_3am, 0, lambda: 0.99) is None
+    assert "FRIDAY DEPLOYS" in R.combo_reaction("goose", "friday-push")
+    assert "ballad" in R.combo_reaction("pig", "friday-push")
+    xmas = time.mktime((2026, 12, 25, 12, 0, 0, 0, 0, -1))
+    assert R.holiday_reaction("goose", xmas, lambda: 0.0) == ("christmas", "FESTIVE HONK! HONK HONK HO-HO-HONK!")
+    assert R.holiday_reaction("pig", xmas, lambda: 0.0)[1].startswith("*wears tiny santa")
+    assert R.holiday_reaction("goose", xmas, lambda: 0.9) is None
+    assert R.holiday_reaction("goose", time.mktime((2026, 10, 5, 12, 0, 0, 0, 0, -1)), lambda: 0.0)[0] == "spooky-season"

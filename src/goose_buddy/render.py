@@ -159,7 +159,7 @@ def compact_frame(frame_rows: list[str]) -> list[str]:
 
 # ─── The hero widget ────────────────────────────────────────────────────────────────────────
 
-def _frame_reaction(reaction: str, achievements: list[str], inner: int) -> list[str]:
+def _frame_reaction(reaction: str, achievements: list[str], inner: int, style: str = "classic") -> list[str]:
     max_content = WIDGET_MAX_LINES - 2
     ach_lines = [f"\U0001F3C6 {a}" for a in achievements]
     reaction_max = max(0, max_content - len(ach_lines))
@@ -167,9 +167,11 @@ def _frame_reaction(reaction: str, achievements: list[str], inner: int) -> list[
     content = (reaction_lines + ach_lines)[:max_content]
     if len(content) == 1:
         content = [""] + content
-    top = "." + "-" * (inner + 2) + "."
-    bottom = "`" + "-" * (inner + 2) + "'"
-    return [top, *[f"| {DIM_ITALIC}{pad_line(line, inner)}{RESET} |" for line in content], bottom]
+    if style == "round":
+        top, bottom, edge = "(" + "~" * (inner + 2) + ")", "(" + "~" * (inner + 2) + ")", ("(", ")")
+    else:
+        top, bottom, edge = "." + "-" * (inner + 2) + ".", "`" + "-" * (inner + 2) + "'", ("|", "|")
+    return [top, *[f"{edge[0]} {DIM_ITALIC}{pad_line(line, inner)}{RESET} {edge[1]}" for line in content], bottom]
 
 
 def render_widget(
@@ -180,6 +182,7 @@ def render_widget(
     tick: int = 0,
     theme: str = "dark",
     sprite_rows: list[str] | None = None,
+    bubble_style: str = "classic",
 ) -> list[str]:
     """The companion card: bubble on the left, sprite on the right, name underneath."""
     achievements = achievements or []
@@ -198,7 +201,7 @@ def render_widget(
     has_content = bool((reaction or "").strip()) or bool(achievements)
     can_frame = has_content and max_inner >= min_inner
     inner = max_inner if can_frame else 0
-    bubble = _frame_reaction(reaction or "", achievements, inner) if can_frame else []
+    bubble = _frame_reaction(reaction or "", achievements, inner, bubble_style) if can_frame else []
     bubble_width = inner + 4
     card_width = bubble_width + tail_width + sprite_width if can_frame else sprite_width
 

@@ -73,19 +73,23 @@ extensions:
 
 `show` `stats` `pet` `rename NAME` `personality TEXT` `mute` `unmute` `react REASON` `watch` `pane`
 `xp` `mood` `achievements [--all]` `list` `save [SLOT]` `summon [SLOT]` `dismiss SLOT` `pick [SPECIES] [RARITY] [--name N]`
-`memory [projects|bugs|preferences]` `hatch --force` `config [KEY=VALUE]` `doctor` `brain-test`
+`memory [projects|bugs|preferences]` `soul [--apply]` `hatch --force` `config [KEY=VALUE]` `doctor` `brain-test`
 
 ## Status
 
 Done: engine, art and animation, widget, reactions, session watcher, brain, tmux pane, CLI, MCP extension,
-XP/levels/upgrades, moods, all 131 achievements, menagerie, suggestions, local project/bug/preference memory.
-Not yet ported: species-specific streak/combo/seasonal lines (goose only; others use generic lines), the
-`frequency`/`style`/`statusline` settings, brain-written name/personality at hatch, and the code-analysis
-suggestions (long function, new file without test, rename sequence).
-Every achievement counter is now fed. Upstream never feeds `holiday_sessions`, `spooky_sessions` or
-`april_fools_errors` (those three achievements are unreachable there); goose-buddy derives them from the date.
+XP/levels/upgrades, moods, all 131 achievements (every counter is fed), menagerie, suggestions (including
+long function, new file without a test and rename sequences, judged locally from tool output), local
+project/bug/preference memory, species-specific streak/recovery/combo/holiday lines, `bubbleStyle`
+(classic or round), settings toggles (`moodEnabled`, `suggestionsEnabled`, `suggestionCooldown`,
+`commentCooldown`) and `soul`, which asks the brain for a name and personality (species, rarity and stats
+only; it proposes, `--apply` keeps it).
+Authored lines (streaks, recoveries, combos, holidays) are never overwritten by the brain.
+Upstream never feeds `holiday_sessions`, `spooky_sessions` or `april_fools_errors` (those three achievements
+are unreachable there); goose-buddy derives them from the date.
+Not applicable here: the `statusline` settings (goose has no status line; the tmux pane replaces it).
 
 ## Tests
 
-`pytest` (104 tests: golden vectors, rendering never overflows its width, classifier, the brain's privacy contract
+`pytest` (115 tests: golden vectors, rendering never overflows its width, classifier, the brain's privacy contract
 and API etiquette, the watcher against a session database, concurrent state access).

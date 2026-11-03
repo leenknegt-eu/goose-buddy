@@ -28,7 +28,7 @@ def frame_lines(width: int | None = None) -> list[str]:
     a = state.kv_get("announce", None)
     notes = a["notes"] if a and time.time() - a["timestamp"] <= cfg["reactionTTL"] * 2 else []
     lines = render_widget(companion, r["reaction"] if r else None, notes, max(10, cols - 1),
-                          current_tick(), cfg["theme"])
+                          current_tick(), cfg["theme"], bubble_style=cfg["bubbleStyle"])
     xp = progress.xp_state()
     return lines + ["", f" {progress.MOOD_FACES[progress.get_mood()['current']]} {progress.xp_bar(xp['totalXp'], 12)}"
                         f"  {xp['totalXp']} xp"]

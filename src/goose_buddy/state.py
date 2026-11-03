@@ -24,6 +24,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "reactionTTL": 25,           # seconds a speech bubble stays up
     "muted": False,
     "theme": "dark",
+    "bubbleStyle": "classic",    # "classic" (.--. | |) or "round" ((~~) ( ))
+    "moodEnabled": True,         # mood flourishes on reactions
+    "suggestionsEnabled": True,  # proactive nudges
+    "suggestionCooldown": 180,   # seconds between nudges
     "species_pool": "original",  # "original" (18, Claude Code's) or "coding-buddy" (20)
     "species_override": "",      # e.g. "goose": force the species, keep every other roll
     "user_id": "",               # explicit identity seed; empty = read ~/.claude.json

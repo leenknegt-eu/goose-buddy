@@ -47,3 +47,14 @@ def test_animation_cycle_blinks_and_returns_to_rest():
 def test_wrap_respects_width_and_line_cap():
     lines = wrap_reaction("a b c " * 80, 20, 4)
     assert len(lines) == 4 and all(display_width(l) <= 20 for l in lines) and lines[-1].endswith("…")
+
+
+def test_round_bubble_style_keeps_widths():
+    from goose_buddy.engine import generate_bones, Companion
+    from goose_buddy.render import display_width, render_widget
+    c = Companion(generate_bones("round-test"), "Honk", "p", 0, "x")
+    for width in (30, 50, 78):
+        classic = render_widget(c, "a fairly long reaction that has to wrap around", [], width, 0)
+        round_ = render_widget(c, "a fairly long reaction that has to wrap around", [], width, 0, bubble_style="round")
+        assert [display_width(l) for l in round_] == [display_width(l) for l in classic]
+        assert any("(~" in l for l in round_) and not any(".--" in l for l in round_)

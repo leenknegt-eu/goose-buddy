@@ -40,3 +40,10 @@ def test_personality_uses_the_right_article():
     assert generate_personality(b, "abc").startswith("An uncommon")
     b.rarity = "rare"
     assert generate_personality(b, "abc").startswith("A rare")
+
+
+def test_config_validates_choices(capsys):
+    assert main(["config", "bubbleStyle=square"]) == 2
+    assert main(["config", "commentCooldown=-5"]) == 2
+    assert main(["config", "bubbleStyle=round"]) == 0
+    assert '"bubbleStyle": "round"' in capsys.readouterr().out

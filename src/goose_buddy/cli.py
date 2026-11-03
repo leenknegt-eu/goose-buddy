@@ -34,8 +34,14 @@ HELP = """goose-buddy: your terminal companion
   list                 the menagerie        save [SLOT] | summon [SLOT] | dismiss SLOT
   pick [SPECIES] [RARITY] [--name N]   roll a new buddy and add it to the menagerie
   memory [projects|bugs|preferences]   what the buddy remembers (local only)
+  soul [--apply]       ask the brain for a name and personality (sends species/rarity/stats only)
   brain-test           one real call to the brain model, to prove it works
 """
+
+
+CHOICES = {"bubbleStyle": ("classic", "round"), "theme": ("dark", "light"),
+           "species_pool": ("original", "coding-buddy")}
+NON_NEGATIVE = ("commentCooldown", "reactionTTL", "suggestionCooldown")
 
 
 def _set(cfg_path: str, value: str) -> dict:
@@ -51,6 +57,10 @@ def _set(cfg_path: str, value: str) -> dict:
             except ValueError:
                 pass
     keys = cfg_path.split(".")
+    if cfg_path in CHOICES and v not in CHOICES[cfg_path]:
+        raise ValueError(f"{cfg_path} must be one of {', '.join(CHOICES[cfg_path])}")
+    if cfg_path in NON_NEGATIVE and not (isinstance(v, (int, float)) and v >= 0):
+        raise ValueError(f"{cfg_path} must be a non-negative number")
     if len(keys) == 2:
         return state.save_config(**{keys[0]: {keys[1]: v}})
     return state.save_config(**{keys[0]: v})
@@ -123,7 +133,11 @@ def _dispatch(cmd: str, args: list[str], companion) -> int:
     elif cmd == "config":
         if len(args) > 1 and "=" in args[1]:
             k, v = args[1].split("=", 1)
-            _set(k, v)
+            try:
+                _set(k, v)
+            except ValueError as e:
+                print(e, file=sys.stderr)
+                return 2
             if k in ("species_override", "species_pool", "user_id"):
                 # identity settings change who the buddy is: re-hatch from them, keeping the name
                 fresh = hatch()
@@ -176,6 +190,20 @@ def _dispatch(cmd: str, args: list[str], companion) -> int:
         print(f"brain      : {cfg['brain']['model']} enabled={cfg['brain']['enabled']} "
               f"key={'found' if find_key() else 'MISSING'} allowed_now={Brain().allowed()}")
         print(f"state dir  : {state.home()}")
+    elif cmd == "soul":
+        got = Brain().soul(companion.bones)
+        if not got:
+            print("no proposal (key missing, rate-limited, or the reply was unusable)", file=sys.stderr)
+            return 1
+        print(f"name: {got[0]}\npersonality: {got[1]}")
+        if "--apply" in args:
+            companion.name, companion.personality = got
+            state.save_companion(companion)
+            state.bump("renames")
+            state.bump("personalities_set")
+            print("applied")
+        else:
+            print("(run `goose-buddy soul --apply` to keep it)")
     elif cmd == "brain-test":
         t = time.time()
         line = Brain().react(companion, "test-fail")

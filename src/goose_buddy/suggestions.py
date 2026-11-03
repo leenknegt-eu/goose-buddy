@@ -29,6 +29,13 @@ TEMPLATES: dict[str, list[Suggestion]] = {
         Suggestion("lrg_diff_2", "escalated_large_diff", "That's not a diff, that's a whole new file. Consider a branch.", "warn")],
     "no_tests_long_session": [
         Suggestion("no_test_session_1", "no_tests_long_session", "You've been busy. But where are the tests?", "info")],
+    "new_file_no_test": [
+        Suggestion("no_test_1", "new_file_no_test", "New file, no test? I see a bug in your future.", "info")],
+    "sequence_rename": [
+        Suggestion("rename_1", "sequence_rename", "Renaming things is good, but update all the references too.", "warn")],
+    "long_function": [
+        Suggestion("long_fn_1", "long_function", "That's one long function. Consider breaking it up.", "warn"),
+        Suggestion("long_fn_2", "long_function", "*squints* is that function or a novel? Break it down.", "warn")],
     "todo_comment": [
         Suggestion("todo_1", "todo_comment", "TODO noted. Don't forget to actually do it.", "info"),
         Suggestion("fixme_1", "todo_comment", "FIXME seen. The clock is ticking.", "warn")],
@@ -106,3 +113,51 @@ def on_cooldown(seconds: float = 180, now: float | None = None) -> bool:
 
 def mark_suggested(now: float | None = None) -> None:
     state.kv_set("last_suggestion", time.time() if now is None else now)
+
+
+SOURCE_EXT = {"py", "ts", "tsx", "js", "jsx", "rs", "go", "java", "rb", "php", "c", "cpp", "cs", "swift", "kt", "scala", "lua"}
+TESTISH = re.compile(r"(^|[/_.-])(tests?|spec|specs)([/_.-]|$)|_test\.|\.test\.|\.spec\.", re.I)
+FUNC_HEAD = re.compile(r"^(?P<ind>[+\s]*?)(?:async\s+)?(?:def|function|fn|func)\s+\w+", re.M)
+
+
+def check_new_file_no_test(text: str) -> Suggestion | None:
+    """Files created in this output (git's `create mode` / `new file:`), none of them a test."""
+    made = re.findall(r"create mode \d+ (\S+)|new file:\s+(\S+)", text)
+    paths = [a or b for a, b in made]
+    src = [p for p in paths if p.rsplit(".", 1)[-1] in SOURCE_EXT and not TESTISH.search(p)]
+    if src and not any(TESTISH.search(p) for p in paths):
+        return TEMPLATES["new_file_no_test"][0]
+    return None
+
+
+def check_renames(text: str) -> Suggestion | None:
+    """Three or more renames in a row (counted across outputs, reset when it fires)."""
+    n = len(re.findall(r"^\s*rename (?:from|to) |^\s*renamed:|^R\d*\s+\S+\s+\S+", text, re.M))
+    if not n:
+        return None
+    with state.locked():
+        h = _history()
+        h["recentRenames"] = h.get("recentRenames", 0) + n
+        fire = h["recentRenames"] >= 3
+        if fire:
+            h["recentRenames"] = 0
+        _save(h)
+    return TEMPLATES["sequence_rename"][0] if fire else None
+
+
+def check_long_function(text: str) -> Suggestion | None:
+    """A def/function/fn whose indented body runs 50+ (or 100+) lines in this output."""
+    lines = text.splitlines()
+    best = 0
+    for m in FUNC_HEAD.finditer(text):
+        start = text.count("\n", 0, m.start())
+        indent = len(m.group("ind").replace("+", ""))
+        n = 0
+        for line in lines[start + 1:]:
+            body = line.lstrip("+")
+            if body.strip() and len(body) - len(body.lstrip()) <= indent:
+                break
+            n += 1
+        best = max(best, n)
+    t = TEMPLATES["long_function"]
+    return t[1] if best >= 100 else t[0] if best >= 50 else None

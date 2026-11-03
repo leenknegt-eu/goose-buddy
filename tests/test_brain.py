@@ -120,3 +120,21 @@ def test_disabled_brain_is_silent(monkeypatch):
 def test_clean_strips_quotes_and_bounds_length():
     assert clean('  "honk"  ') == "honk" and clean("") is None and clean("x") is None
     assert len(clean("word " * 100)) <= MAX_LINE
+
+
+def test_soul_parses_a_name_and_personality_and_sends_only_persona_data(monkeypatch):
+    monkeypatch.setenv("OPENCODE_API_KEY", KEY)
+    seen = []
+    reply = "NAME: Biscuit!\nPERSONALITY: A watchful goose that sulks at red builds and gloats at green ones."
+    got = Brain(transport(reply, log=seen)).soul(companion().bones)
+    assert got == ("Biscuit", "A watchful goose that sulks at red builds and gloats at green ones.")
+    body = json.loads(seen[0].content)
+    user = body["messages"][1]["content"]
+    assert re.fullmatch(r"A \w+ \w+\. Stats \(0-100\): [A-Z0-9 ,]+\.", user)   # species, rarity, stats: nothing else
+
+
+def test_soul_rejects_unusable_replies(monkeypatch):
+    monkeypatch.setenv("OPENCODE_API_KEY", KEY)
+    for bad in ("no format at all", "NAME: \nPERSONALITY: short", "NAME: Ok\nPERSONALITY: tiny"):
+        state.kv_set("brain", {})                     # reset the rate limiter between attempts
+        assert Brain(transport(bad)).soul(companion().bones) is None

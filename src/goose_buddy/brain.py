@@ -98,20 +98,43 @@ class Brain:
         state.kv_set("brain", b)
 
     # -- the call ---------------------------------------------------------------------------
-    def react(self, c: Companion, reason: str) -> str | None:
+    def _chat(self, messages: list[dict[str, str]], clean_fn=None) -> str | None:
+        """One budgeted call; None on any failure. `messages` must hold persona data only."""
         if not self.allowed():
             return None
         cfg = state.load_config()["brain"]
         self._record_call()                      # count attempts, so failures can't hammer the API
         headers = {"Authorization": f"Bearer {find_key()}", "Content-Type": "application/json",
                    "User-Agent": USER_AGENT, "x-opencode-session": self._session_id()}
-        body = {"model": cfg["model"], "messages": build_messages(c, reason),
-                "max_tokens": 800, "reasoning_effort": "low"}
+        body = {"model": cfg["model"], "messages": messages, "max_tokens": 800, "reasoning_effort": "low"}
         try:
             with httpx.Client(timeout=cfg["timeout"], transport=self._transport) as client:
                 r = client.post(URL, json=body, headers=headers)
             if r.status_code != 200:
                 return None
-            return clean(r.json()["choices"][0]["message"].get("content") or "")
+            return r.json()["choices"][0]["message"].get("content") or ""
         except (httpx.HTTPError, KeyError, IndexError, ValueError):
             return None
+
+    def react(self, c: Companion, reason: str) -> str | None:
+        raw = self._chat(build_messages(c, reason))
+        return clean(raw) if raw is not None else None
+
+    def soul(self, bones) -> tuple[str, str] | None:
+        """Propose a (name, personality) for a buddy from its species, rarity and stats only."""
+        s = ", ".join(f"{k} {v}" for k, v in bones.stats.items())
+        raw = self._chat([
+            {"role": "system", "content": (
+                "You name and characterise small terminal companion creatures. Reply with exactly two lines:\n"
+                "NAME: <1-14 characters, one word, no punctuation>\n"
+                "PERSONALITY: <one or two sentences, max 300 characters, second person is not allowed>")},
+            {"role": "user", "content": f"A {bones.rarity} {bones.species}. Stats (0-100): {s}."}])
+        if not raw:
+            return None
+        name = re.search(r"^NAME:\s*(.+)$", raw, re.M)
+        pers = re.search(r"^PERSONALITY:\s*(.+)$", raw, re.M | re.S)
+        if not (name and pers):
+            return None
+        n = re.sub(r"[^\w-]", "", name.group(1).strip())[:14]
+        p = re.sub(r"\s+", " ", pers.group(1)).strip()[:300]
+        return (n, p) if n and len(p) >= 10 else None

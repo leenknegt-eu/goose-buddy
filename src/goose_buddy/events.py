@@ -19,7 +19,8 @@ from typing import Callable
 from . import memory, progress, state, suggestions
 from .brain import Brain
 from .engine import Companion
-from .reactions import (BAD, classify_output, get_name_reaction, get_reaction, is_name_mentioned,
+from .reactions import (BAD, classify_output, combo_reaction, get_name_reaction, get_reaction,
+                        holiday_reaction, is_name_mentioned, pick_combo, recovery_reaction,
                         streak_reaction, time_reason)
 
 COUNTER_FOR = {"error": "errors_seen", "test-fail": "tests_failed", "large-diff": "large_diffs",
@@ -50,6 +51,7 @@ class Watcher:
         self.c, self.db, self.brain, self.clock, self.rng = companion, db or default_db(), brain, clock, rng
         self.streak = 0
         self.last_bad: tuple[str, float] | None = None
+        self.recovered_from: str | None = None
         self.last_xp_tick = clock()
         self.marathon_counted = False
         self.pending_notes: list[str] = []
@@ -177,6 +179,7 @@ class Watcher:
             self.last_bad = (reason, now)
         elif reason in GOOD and self.last_bad:
             if now - self.last_bad[1] < RECOVERY_WINDOW:
+                self.recovered_from = self.last_bad[0]
                 state.bump("recoveries")
                 if marathon:
                     state.bump("marathon_recoveries")
@@ -196,6 +199,8 @@ class Watcher:
                 self.pending_suggestion = suggestions.check_large_diff(int(m.group(1))) or self.pending_suggestion
         if re.search(r"^\+.*(TODO|FIXME)", text, re.M):
             self.pending_suggestion = suggestions.check_todo(text) or self.pending_suggestion
+        for check in (suggestions.check_new_file_no_test, suggestions.check_renames, suggestions.check_long_function):
+            self.pending_suggestion = check(text) or self.pending_suggestion
         self.pending_suggestion = suggestions.check_no_tests() or self.pending_suggestion
 
     # -- reacting ---------------------------------------------------------------------------
@@ -203,11 +208,13 @@ class Watcher:
         last = state.load_reaction()
         return bool(last and self.clock() - last["timestamp"] < state.load_config()["commentCooldown"])
 
-    def react(self, reason: str, ctx: dict[str, str] | None = None, force: bool = False) -> dict | None:
+    def react(self, reason: str, ctx: dict[str, str] | None = None, force: bool = False,
+              text: str | None = None) -> dict | None:
         cfg = state.load_config()
         if reason in COUNTER_FOR:
             state.bump(COUNTER_FOR[reason])
         self.streak = self.streak + 1 if reason in BAD else 0
+        self.recovered_from = None
         self._derived(reason)
         if reason == "pet":
             state.bump("pets")
@@ -215,35 +222,50 @@ class Watcher:
         self.pending_notes = []
         if notes:                                # level-ups / achievements show beside the bubble
             state.kv_set("announce", {"notes": notes[:3], "timestamp": self.clock()})
-        mood = progress.get_mood(self.clock())["current"]
+        mood = progress.get_mood(self.clock())["current"] if cfg["moodEnabled"] else None
         if cfg["muted"] or (not force and self._cooling()):
             return None
         b = self.c.bones
-        if reason == "name":
+        special = text is not None               # authored species lines the brain must not overwrite
+        if text is not None:
+            pass
+        elif reason == "name":
             text = get_name_reaction(b.species, self.rng)
         elif reason == "credits":
             text = get_reaction("frustrated", b.species, b.rarity, b.stats, rng=self.rng)
         else:
-            text = (reason in BAD and self.streak >= 3 and streak_reaction(b.species, self.streak)) \
-                or get_reaction(reason, b.species, b.rarity, b.stats, ctx, self.rng)
-        if mood in progress.MOOD_REACTIONS and self.rng() < 0.3 and reason not in ("name", "credits"):
+            text = get_reaction(reason, b.species, b.rarity, b.stats, ctx, self.rng)
+            combo = pick_combo(reason, self.clock(), self.clock() - self.session_start, self.rng)
+            for line in (combo and combo_reaction(b.species, combo),
+                         self.recovered_from and recovery_reaction(b.species, self.recovered_from),
+                         reason in BAD and self.streak >= 3 and streak_reaction(b.species, self.streak)):
+                if line:                         # upstream order: combo, recovery, then the streak wins
+                    text, special = line, True
+        if mood and not special and self.rng() < 0.3 and reason not in ("name", "credits"):
             text = f"{progress.MOOD_REACTIONS[mood]} {text}"     # upstream: 30% mood flavour
         shown = state.save_reaction(text, reason, "canned", self.clock())
         state.bump("reactions_given")
         sug = self.pending_suggestion
         self.pending_suggestion = None
-        if sug and reason not in ("name", "credits", "pet") and not suggestions.on_cooldown(now=self.clock()):
+        if (sug and cfg["suggestionsEnabled"] and reason not in ("name", "credits", "pet")
+                and not suggestions.on_cooldown(cfg["suggestionCooldown"], self.clock())):
             suggestions.mark_suggested(self.clock())
-            return state.save_reaction(sug.message, "suggestion", "suggestion", self.clock())
-        if self.brain:                           # upgrade the canned line if the brain answers in time
+            return {**state.save_reaction(sug.message, "suggestion", "suggestion", self.clock()), "notes": notes}
+        if self.brain and not special:           # upgrade the canned line if the brain answers in time
             line = self.brain.react(self.c, reason)
             if line:
                 shown = state.save_reaction(line, reason, "brain", self.clock())
         return {**shown, "notes": notes}
 
     def _idle(self) -> dict | None:
+        if self.clock() - self.last_activity <= 120:
+            return None
+        holiday = holiday_reaction(self.c.bones.species, self.clock(), self.rng)
+        if holiday:
+            self.last_activity = self.clock()
+            return self.react(holiday[0], text=holiday[1])
         flavour = time_reason(self.clock(), self.rng)
-        if flavour and self.clock() - self.last_activity > 120:
+        if flavour:
             self.last_activity = self.clock()
             return self.react(flavour)
         return None

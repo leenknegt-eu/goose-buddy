@@ -108,7 +108,8 @@ def test_error_streak_escalates(db):
         clock[0] += 31
         add(db, "user", tool(f"{i + 1} failed"))
         out += w.poll()
-    assert out[-1]["reaction"].startswith("HONK") or "three" in out[-1]["reaction"]
+    from goose_buddy.reactions import streak_reaction
+    assert out[-1]["reaction"] == streak_reaction(w.c.bones.species, 3)
 
 
 def test_a_missing_database_is_not_an_error(tmp_path):
@@ -191,3 +192,45 @@ def test_holiday_and_spooky_sessions_and_time_spent_xp(db):
     clock[0] += 150                                                 # two active minutes
     w.poll()
     assert progress.xp_state()["totalXp"] - before >= 4
+
+
+def test_recovery_line_and_special_lines_skip_the_brain(db):
+    clock = [1000.0]
+
+    class Boom:
+        def react(self, *a):
+            raise AssertionError("the brain must not overwrite an authored line")
+    w = make(db, clock)
+    w.c.bones.species = "goose"
+    w.brain = Boom()
+    w.streak = 2
+    r = w.react("error", force=True)                                # third failure: authored streak line
+    assert r["reaction"] == "HONK HONK HONK! STOP! HONK!"
+    clock[0] += 60
+    r = w.react("all-green", force=True)
+    assert r["reaction"] == "HONK OF VICTORY! HONK HONK HOOOONK!"
+
+
+def test_holiday_greeting_when_idle(db):
+    import time as _t
+    clock = [_t.mktime((2026, 12, 25, 12, 0, 0, 0, 0, -1))]
+    w = make(db, clock)
+    w.c.bones.species = "goose"
+    clock[0] += 300
+    r = w.poll()
+    assert r and r[0]["reaction"] == "FESTIVE HONK! HONK HONK HO-HO-HONK!"
+
+
+def test_settings_switch_off_mood_and_suggestions(db):
+    from goose_buddy import suggestions
+    sug = suggestions.TEMPLATES["todo_comment"][0]
+    for enabled in (True, False):
+        state.save_config(moodEnabled=enabled, suggestionsEnabled=enabled)
+        state.kv_set("last_suggestion", None)
+        w = make(db, [1000.0])
+        w.rng = lambda: 0.0                                        # every 30% flavour roll hits
+        w.pending_suggestion = sug
+        r = w.react("commit", force=True)
+        assert (r["reason"] == "suggestion") is enabled
+        if not enabled:
+            assert not r["reaction"].startswith(("*blooms*", "*intensifies*", "*vibrates", "*yawns*", "*sighs", "*glitches*"))

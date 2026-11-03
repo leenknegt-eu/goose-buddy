@@ -224,3 +224,28 @@ def test_cli_new_commands(capsys):
 def test_cli_unlocks_are_announced(capsys):
     main(["pet"])
     assert "Achievement unlocked: First Steps" in capsys.readouterr().out
+
+
+def test_new_file_without_a_test_is_noticed():
+    out = " create mode 100644 src/new_thing.py\n create mode 100644 docs/x.md"
+    assert suggestions.check_new_file_no_test(out).id == "no_test_1"
+    assert suggestions.check_new_file_no_test(out + "\n create mode 100644 tests/test_new_thing.py") is None
+    assert suggestions.check_new_file_no_test(" create mode 100644 README.md") is None
+
+
+def test_three_renames_in_sequence_fire_once():
+    one = "rename from a.py\nrename to b.py\n"
+    assert suggestions.check_renames("nothing here") is None
+    assert suggestions.check_renames(one) is None               # 2 so far
+    assert suggestions.check_renames("renamed: c.py").id == "rename_1"
+    assert suggestions.check_renames("renamed: d.py") is None  # counter reset after firing
+
+
+def test_long_function_thresholds():
+    def fn(n):
+        return "def big():\n" + "".join(f"    x{i} = {i}\n" for i in range(n)) + "\nprint('after')\n"
+    assert suggestions.check_long_function(fn(10)) is None
+    assert suggestions.check_long_function(fn(60)).id == "long_fn_1"
+    assert suggestions.check_long_function(fn(120)).id == "long_fn_2"
+    diff = "+def big():\n" + "".join(f"+    y{i} = 1\n" for i in range(55))
+    assert suggestions.check_long_function(diff).id == "long_fn_1"

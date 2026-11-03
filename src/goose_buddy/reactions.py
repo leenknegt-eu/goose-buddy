@@ -137,19 +137,121 @@ def is_name_mentioned(text: str, name: str) -> bool:
 
 
 # Streak lines for the goose (upstream has one table per species; others use the generic line).
-_STREAK_GOOSE = {3: "HONK HONK HONK! STOP! HONK!", 5: "HONK HONK HONK! STOP! HONK!",
-                 10: "*HONKING INTENSIFIES TO MAXIMUM*", 20: "HONKING HAS CEASED. GOOSE HAS GIVEN UP."}
+_STREAK_SPECIES = {
+    3: {"cat": "*has already left the room*", "dragon": "*breathes fire on every error* THEY KEEP COMING.",
+        "robot": "ERROR RATE: CRITICAL. RECOMMEND: RUBBER DUCK PROTOCOL.", "goose": "HONK HONK HONK! STOP! HONK!"},
+    5: {"cat": "*knocks all motivation off desk*", "dragon": "*enters berserker mode* ERROR STREAK. CHALLENGE ACCEPTED.",
+        "owl": "*analyzes pattern* these errors are not random. there's a root cause.",
+        "robot": "ERROR RATE: CRITICAL. RECOMMEND: RUBBER DUCK PROTOCOL.",
+        "ghost": "*the error streak is haunting* literally.", "goose": "HONK HONK HONK! STOP! HONK!",
+        "blob": "*turns progressively redder*", "axolotl": "*smiles nervously* we can do this!",
+        "rabbit": "*frantic hopping*"},
+    10: {"cat": "*sleeps through the error streak* wake me when it's over.",
+         "dragon": "*enters berserker mode* ERROR STREAK. CHALLENGE ACCEPTED.",
+         "owl": "*deep thought* ten errors. the common denominator must be found.",
+         "robot": "ERROR STREAK: 10. SYSTEM STABILITY: QUESTIONABLE.", "ghost": "*dies again* the errors killed me. twice.",
+         "goose": "*HONKING INTENSIFIES TO MAXIMUM*", "blob": "*has split into multiple worried blobs*",
+         "capybara": "*vibes through the chaos* it's fine. everything is fine.",
+         "axolotl": "*regenerates hope* still smiling! *eye twitches*", "rabbit": "*has burrowed underground*"},
+    20: {"cat": "*has permanently left*", "chonk": "*doesn't notice* still sleeping.",
+         "goose": "HONKING HAS CEASED. GOOSE HAS GIVEN UP."},
+}
 _STREAK_GENERIC = {3: "that's three errors in a row. *concerned look*",
                    5: "FIVE ERRORS. have you considered a different approach?",
                    10: "TEN. ERRORS. IN. A. ROW. *panics*", 20: "twenty errors. *stares into the void*"}
+_RECOVERY_SPECIES = {
+    "cat": "*yawns* I knew you'd fix it. eventually.", "dragon": "VICTORY. as it should be.",
+    "owl": "*satisfied hoot* knowledge gained through struggle.", "robot": "ISSUE: RESOLVED. STATUS: OPERATIONAL.",
+    "ghost": "*the spirits of broken code find peace*", "goose": "HONK OF VICTORY! HONK HONK HOOOONK!",
+    "duck": "*VICTORY QUACKING INTENSIFIES*", "blob": "*jiggles with pure joy*",
+    "capybara": "*chill nod* nice recovery, friend.", "axolotl": "*happy gill flutter* you did it!",
+    "rabbit": "*celebratory binky*!!!"}
+_RECOVERY_GENERIC = {"error": "WE FIXED IT. *celebrates*", "test-fail": "GREEN! after all that! *happy dance*",
+                     "build-fail": "THE BUILD PASSES. *triumphant roar*", "merge-conflict": "conflict resolved! *peace gesture*"}
+_COMBO_SPECIES = {
+    ("cat", "friday-push"): "*knocks the push off the table* it's FRIDAY.",
+    ("goose", "friday-push"): "HONK! NO FRIDAY DEPLOYS! HONK! ABSOLUTELY NOT!",
+    ("robot", "late-night-error"): "ERROR AT 0300. HUMAN JUDGMENT: IMPAIRED.",
+    ("dragon", "marathon-error"): "even dragons rest. three hours. MULTIPLE ERRORS.",
+    ("owl", "late-night-commit"): "*approves of the midnight commit* night is for coding.",
+    ("ghost", "late-night-error"): "the bugs are haunted. and so are you, apparently."}
+_COMBO_GENERIC = {
+    "late-night-error": "error at 3am. the universe is testing you.",
+    "late-night-commit": "a midnight commit. your future self will thank you. or curse you.",
+    "friday-push": "FRIDAY PUSH. the ballad of every developer.",
+    "marathon-error": "three hours in and ANOTHER error. *exhausted solidarity noises*",
+    "weekend-conflict": "merge conflict on a weekend. your dedication is... concerning.",
+    "marathon-test-fail": "hours of coding. still failing tests. the sunk cost is real.",
+    "build-after-push": "pushed with confidence. build failed with conviction."}
+_HOLIDAYS = {(1, 1): ("new-year", "happy new year! new year, new bugs."),
+             (2, 14): ("valentines", "*offers a tiny heart-shaped leaf* happy valentine's."),
+             (3, 14): ("pi-day", "3.14159265358979... happy pi day!"),
+             (4, 1): ("april-fools", "APRIL FOOLS! ...the error is real though."),
+             (10, 31): ("halloween", "*spooky debugging intensifies* happy halloween!"),
+             (12, 25): ("christmas", "*wears tiny santa hat* happy holidays!"),
+             (12, 31): ("new-years-eve", "one more commit before midnight?")}
+_SEASONAL = {
+    ("ghost", "halloween"): "*is the Halloween spirit*", ("ghost", "christmas"): "*the ghost of Christmas coding*",
+    ("cat", "halloween"): "*knocks pumpkin off desk*", ("cat", "christmas"): "*knocks ornaments off the tree*",
+    ("dragon", "halloween"): "*breathes pumpkin-spiced fire*",
+    ("dragon", "christmas"): "*volunteers as the star on top of the tree*",
+    ("robot", "christmas"): "HOLIDAY PROTOCOL: ACTIVATED. FESTIVE SUBROUTINES: RUNNING.",
+    ("robot", "pi-day"): "PI: 3.14159265358979323846264338327950288...",
+    ("goose", "halloween"): "SPOOKY HONK! HONK!", ("goose", "christmas"): "FESTIVE HONK! HONK HONK HO-HO-HONK!",
+    ("owl", "pi-day"): "*calculates pi to 100 digits from memory*",
+    ("duck", "christmas"): "*wears tiny santa hat* quack! *festive quacking*",
+    ("duck", "halloween"): "*dressed as a ghost* quack? ...boo?",
+    ("ghost", "april-fools"): "*pretends to be alive for April Fools*",
+    ("cat", "april-fools"): "*knocks an april fool off the desk*"}
 BAD = {"error", "test-fail", "build-fail", "type-error", "lint-fail"}
 
 
 def streak_reaction(species: str, streak: int) -> str | None:
+    """Upstream fires at exactly 3, 5 and 10 consecutive failures, and on every one from 20."""
     key = 20 if streak >= 20 else streak
     if key not in _STREAK_GENERIC:
         return None
-    return (_STREAK_GOOSE if species == "goose" else {}).get(key) or _STREAK_GENERIC[key]
+    return _STREAK_SPECIES[key].get(species) or _STREAK_GENERIC[key]
+
+
+def recovery_reaction(species: str, bad_reason: str) -> str | None:
+    return _RECOVERY_SPECIES.get(species) or _RECOVERY_GENERIC.get(bad_reason)
+
+
+def pick_combo(reason: str, now: float, session_seconds: float, rng: Callable[[], float] = _random.random) -> str | None:
+    """Upstream's combination triggers (event x clock x session length), each with its own odds."""
+    t = time.localtime(now)
+    roll = lambda n: int(rng() * n) == 0
+    if reason == "error" and t.tm_hour < 5 and roll(3):
+        return "late-night-error"
+    if reason == "commit" and t.tm_hour < 5 and roll(3):
+        return "late-night-commit"
+    if reason == "push" and t.tm_wday == 4 and roll(2):
+        return "friday-push"
+    if reason == "error" and session_seconds > 10800 and roll(3):
+        return "marathon-error"
+    if reason == "merge-conflict" and t.tm_wday >= 5 and roll(2):
+        return "weekend-conflict"
+    if reason == "test-fail" and session_seconds > 7200 and roll(4):
+        return "marathon-test-fail"
+    if reason == "build-fail" and roll(4):
+        return "build-after-push"
+    return None
+
+
+def combo_reaction(species: str, combo: str) -> str | None:
+    return _COMBO_SPECIES.get((species, combo)) or _COMBO_GENERIC.get(combo)
+
+
+def holiday_reaction(species: str, now: float, rng: Callable[[], float] = _random.random) -> tuple[str, str] | None:
+    """(reason, text) for a holiday (1 in 5 chances) or spooky-season October (1 in 20), else None."""
+    t = time.localtime(now)
+    h = _HOLIDAYS.get((t.tm_mon, t.tm_mday))
+    if h and int(rng() * 5) == 0:
+        return h[0], _SEASONAL.get((species, h[0])) or h[1]
+    if t.tm_mon == 10 and int(rng() * 20) == 0:
+        return "spooky-season", "spooky season. every bug is a ghost now."
+    return None
 
 
 def time_reason(now: float | None = None, rng: Callable[[], float] = _random.random) -> str | None:
