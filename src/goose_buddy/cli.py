@@ -9,6 +9,7 @@ import time
 from . import __version__, memory, menagerie, progress, state
 from .brain import Brain, find_key
 from .engine import STAT_NAMES, render_card
+from . import feed
 from .events import Watcher, default_db
 from .identity import ensure_companion, hatch, resolve_user_id
 from .pane import frame_lines, open_tmux_pane, run
@@ -35,6 +36,7 @@ HELP = """goose-buddy: your terminal companion
   pick [SPECIES] [RARITY] [--name N]   roll a new buddy and add it to the menagerie
   memory [projects|bugs|preferences]   what the buddy remembers (local only)
   soul [--apply]       ask the brain for a name and personality (sends species/rarity/stats only)
+  emit REASON [--source S]   append an event to the feed (anything can make the buddy react; see feed.py)
   brain-test           one real call to the brain model, to prove it works
 """
 
@@ -189,7 +191,14 @@ def _dispatch(cmd: str, args: list[str], companion) -> int:
         print(f"sessions db: {default_db()} {'ok' if default_db().exists() else 'MISSING'}")
         print(f"brain      : {cfg['brain']['model']} enabled={cfg['brain']['enabled']} "
               f"key={'found' if find_key() else 'MISSING'} allowed_now={Brain().allowed()}")
+        print(f"feed       : {feed.feed_path()} ({'exists' if feed.feed_path().exists() else 'not created yet'})")
         print(f"state dir  : {state.home()}")
+    elif cmd == "emit" and len(args) > 1:
+        src = args[args.index("--source") + 1] if "--source" in args and args.index("--source") + 1 < len(args) else ""
+        if not feed.emit(args[1], src):
+            print(f"unknown reason {args[1]!r}; known: {', '.join(sorted(feed.REASONS))}", file=sys.stderr)
+            return 2
+        print(f"queued {args[1]} -> {feed.feed_path()}")
     elif cmd == "soul":
         got = Brain().soul(companion.bones)
         if not got:

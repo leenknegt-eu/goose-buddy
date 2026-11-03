@@ -18,6 +18,7 @@ from typing import Callable
 
 from . import memory, progress, state, suggestions
 from .brain import Brain
+from .feed import FeedReader
 from .engine import Companion
 from .reactions import (BAD, classify_output, combo_reaction, get_name_reaction, get_reaction,
                         holiday_reaction, is_name_mentioned, pick_combo, recovery_reaction,
@@ -45,7 +46,7 @@ def _texts(parts: list[dict]) -> str:
 
 
 class Watcher:
-    def __init__(self, companion: Companion, db: Path | None = None, brain: Brain | None = None,
+    def __init__(self, companion: Companion, db: Path | None = None, brain: Brain | None = None, feed_path: Path | None = None,
                  clock: Callable[[], float] = time.time, rng: Callable[[], float] = random.random,
                  new_session: bool = False) -> None:
         self.c, self.db, self.brain, self.clock, self.rng = companion, db or default_db(), brain, clock, rng
@@ -62,6 +63,7 @@ class Watcher:
         # A freshly started pane skips whatever happened while it was closed (no burst of stale
         # reactions, XP and mood); a Watcher kept alive between polls resumes from its position.
         self.last_id: int | None = None if new_session else w.get("last_id")
+        self.feed = FeedReader(feed_path)
         if new_session:
             self._session_started()
 
@@ -111,6 +113,11 @@ class Watcher:
                 r = self.react(reason, ctx)
                 if r:
                     shown.append(r)
+        for reason, _source in self.feed.read():
+            r = self.react(reason)
+            if r:
+                shown.append(r)
+            self.last_activity = self.clock()
         if rows:
             state.kv_set("watch", {"last_id": self.last_id})
             self.last_activity = self.clock()

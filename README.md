@@ -89,6 +89,27 @@ Upstream never feeds `holiday_sessions`, `spooky_sessions` or `april_fools_error
 are unreachable there); goose-buddy derives them from the date.
 Not applicable here: the `statusline` settings (goose has no status line; the tmux pane replaces it).
 
+## The event feed (anything can make the buddy react)
+
+The buddy hears every goose session that gets saved: yours, recipe runs and the decomp workers (they are stored
+as `hidden` sessions). For events that never appear in a transcript, or that come from non-goose tools, there is
+a feed: an append-only JSON-lines file, `$GOOSE_BUDDY_HOME/feed.jsonl` (or `$GOOSE_BUDDY_FEED`).
+
+    goose-buddy emit all-green --source ci
+    echo '{"reason":"deploy","source":"cron"}' >> ~/.config/goose/buddy/feed.jsonl
+
+`reason` must be one of the buddy's reason codes (`test-fail`, `error`, `all-green`, `commit`, `push`, `deploy`,
+`release`, `merge-conflict`, `build-fail`, ... see `goose-buddy emit` with a bad reason for the list). The feed is
+treated as untrusted: lines are capped at 512 bytes, parsed strictly, unknown reasons are dropped, and `source`
+is a label that is never sent to the model (a test plants a canary label to prove it). A new watcher starts at
+the end of the file. Writers rotate the file at 256 KB. Events go through the same cooldown, XP, mood and
+achievements as everything else.
+
+The decomp orchestrator is the first writer (`decomp_orchestrator.buddyfeed`): verdicts (verified is a win,
+a strike an error, needs-review a soft failure), submissions, give-ups and safety drains, with only the reason
+and the event kind as the label, never addresses or details. It does nothing unless the buddy is installed, and
+`DECOMP_BUDDY_FEED=0` turns it off.
+
 ## Updating
 
 On the machine that runs it: `scripts/update.sh` (fast-forward pull, reinstall, `doctor`). It refuses to run
@@ -101,5 +122,5 @@ A running pane and already-running goose sessions keep the old code until restar
 
 ## Tests
 
-`pytest` (115 tests: golden vectors, rendering never overflows its width, classifier, the brain's privacy contract
+`pytest` (126 tests: golden vectors, rendering never overflows its width, classifier, the brain's privacy contract
 and API etiquette, the watcher against a session database, concurrent state access).
