@@ -1,0 +1,14 @@
+goose-buddy is a port of coding-buddy (https://github.com/ramarivera/coding-buddy), MIT licensed:
+
+    Copyright (c) 2026 coding-buddy contributors
+
+coding-buddy is itself a continuation of Claude Code's removed /buddy feature. The following
+are derived from it, mechanically where noted:
+
+  * the species ASCII art and hat art              (src/goose_buddy/data/art_data.py, generated)
+  * the reaction pools and personality phrases     (src/goose_buddy/data/*.py, generated)
+  * the generation algorithm (wyhash, mulberry32, rarity and stat rolls), the speech-bubble
+    layout, the event classifier regexes and the reaction-selection logic, re-implemented in Python
+
+tools/ts2py.py regenerates the data modules from an upstream checkout. The upstream MIT notice
+applies to those portions.
