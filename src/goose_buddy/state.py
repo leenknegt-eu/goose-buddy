@@ -31,7 +31,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "species_pool": "original",  # "original" (18, Claude Code's) or "coding-buddy" (20)
     "species_override": "",      # e.g. "goose": force the species, keep every other roll
     "user_id": "",               # explicit identity seed; empty = read ~/.claude.json
-    "brain": {"enabled": True, "model": "beam-free", "minInterval": 25, "maxPerHour": 40,
+    "brain": {"enabled": True, "model": "beam-free", "minInterval": 10, "maxPerHour": 120,
               "timeout": 20.0},
 }
 

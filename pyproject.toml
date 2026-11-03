@@ -1,6 +1,6 @@
 [project]
 name = "goose-buddy"
-version = "0.4.0"
+version = "0.5.0"
 description = "A persistent terminal companion for goose: a port of coding-buddy (the removed Claude Code /buddy)"
 readme = "README.md"
 license = { text = "MIT" }

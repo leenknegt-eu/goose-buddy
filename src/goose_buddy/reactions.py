@@ -10,7 +10,7 @@ from __future__ import annotations
 import random as _random
 import re
 import time
-from typing import Callable
+from typing import Callable, Collection
 
 from .data import reaction_data as D
 
@@ -113,7 +113,18 @@ def _flair(reaction: str, rarity: str, rng: Callable[[], float]) -> str:
 
 
 def get_reaction(reason: str, species: str, rarity: str, stats: dict[str, int] | None = None,
-                 context: dict[str, str] | None = None, rng: Callable[[], float] = _random.random) -> str:
+                 context: dict[str, str] | None = None, rng: Callable[[], float] = _random.random,
+                 avoid: Collection[str] = ()) -> str:
+    """A canned line. Lines in `avoid` (recently shown) are re-rolled a few times before giving up."""
+    for _ in range(8):
+        text = _get_reaction(reason, species, rarity, stats, context, rng)
+        if text not in avoid:
+            break
+    return text
+
+
+def _get_reaction(reason: str, species: str, rarity: str, stats: dict[str, int] | None,
+                  context: dict[str, str] | None, rng: Callable[[], float]) -> str:
     general = D.REACTIONS.get(reason)
     if not general:
         return "..."
@@ -265,3 +276,30 @@ def time_reason(now: float | None = None, rng: Callable[[], float] = _random.ran
     if 5 <= t.tm_hour < 8:
         return "early-morning"
     return {4: "friday", 5: "weekend", 6: "weekend", 0: "monday"}.get(t.tm_wday)
+
+
+#: reasons that come in bursts (a worker pool commits all day), and the lines for a burst of them
+BURST_WINDOW = 600.0
+BURST_TEXT = {
+    "commit": ["{n} commits in {m} minutes. *counts on wings*", "commit number {n}. the log is getting crowded.",
+               "{n} commits since {m} minutes ago. productive or panicking?", "that's {n} commits. HONK of respect."],
+    "all-green": ["{n} green runs in {m} minutes. suspiciously good.", "green again. that's {n}. *polishes beak*",
+                  "{n} passes lately. the tests are scared of you."],
+    "test-fail": ["{n} failing runs in {m} minutes. *tilts head*", "red {n} times now. the tests have opinions.",
+                  "{n} failures lately. maybe read the output once?"],
+    "error": ["{n} errors in {m} minutes. *concerned honking*", "error number {n}. we are collecting them.",
+              "that's {n} errors lately. something is sad."],
+    "success": ["{n} wins in {m} minutes. *struts*", "success {n}. don't let it go to your head."],
+    "push": ["{n} pushes in {m} minutes. the remote is tired."],
+    "turn": ["{n} agent turns in {m} minutes. busy busy.", "the agent has gone {n} rounds. *watches intently*"],
+}
+
+
+def burst_reaction(reason: str, n: int, minutes: int, rng: Callable[[], float] = _random.random,
+                   avoid: Collection[str] = ()) -> str | None:
+    pool = BURST_TEXT.get(reason)
+    if not pool:
+        return None
+    fresh = [t.format(n=n, m=max(1, minutes)) for t in pool]
+    fresh = [t for t in fresh if t not in avoid] or fresh
+    return _pick(fresh, rng)

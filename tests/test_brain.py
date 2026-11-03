@@ -138,3 +138,35 @@ def test_soul_rejects_unusable_replies(monkeypatch):
     for bad in ("no format at all", "NAME: \nPERSONALITY: short", "NAME: Ok\nPERSONALITY: tiny"):
         state.kv_set("brain", {})                     # reset the rate limiter between attempts
         assert Brain(transport(bad)).soul(companion().bones) is None
+
+
+def test_prompt_carries_recent_lines_angle_and_facts_only():
+    msgs = build_messages(companion(), "commit", facts=["a decompilation worker submitted a function"],
+                          recent=["line one", "line two"], angle="a weary sigh")
+    assert "line one | line two" in msgs[0]["content"] and "a weary sigh" in msgs[0]["content"]
+    assert msgs[1]["content"].endswith("context: a decompilation worker submitted a function")
+
+
+def test_source_labels_map_to_fixed_phrases_only():
+    from goose_buddy.brain import source_phrase
+    assert source_phrase("decomp:submitted") and source_phrase("/work/secret/addr 0x1234") is None
+
+
+def test_repeated_model_line_is_rejected(monkeypatch):
+    monkeypatch.setenv("OPENCODE_API_KEY", KEY)
+    b = Brain(transport("honk. tests failed again!"))
+    assert b.react(companion(), "test-fail", recent=["honk tests failed again"]) is None
+    state.kv_set("brain", {})                  # forget the call just made, or the interval limit answers instead
+    assert Brain(transport("a fresh new idea")).react(companion(), "test-fail", recent=["honk"]) == "a fresh new idea"
+
+
+def test_request_asks_for_varied_output(monkeypatch):
+    monkeypatch.setenv("OPENCODE_API_KEY", KEY)
+    seen = []
+    Brain(transport(log=seen)).react(companion(), "commit")
+    assert json.loads(seen[0].content)["temperature"] == 1.0
+
+
+def test_default_budget_is_roomier():
+    cfg = state.load_config()["brain"]
+    assert cfg["minInterval"] == 10 and cfg["maxPerHour"] == 120

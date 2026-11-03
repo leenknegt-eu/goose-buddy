@@ -27,13 +27,14 @@ bubbles that react to what happens in your goose sessions.
 
 ## Privacy: what the model sees
 
-Only the buddy's persona and a fixed one-line description of an event class, such as `event: the tests just
-failed`. **Never** tool output, commands, file names or code (a test plants a canary in the session and checks it
+Only the buddy's persona, a fixed one-line description of an event class (`event: the tests just failed`), a few
+fixed context phrases ("a decompilation worker submitted a function", burst counts, failure streaks, mood), a random
+style angle, and the buddy's own last few lines (so it does not repeat itself). **Never** tool output, commands, file names or code (a test plants a canary in the session and checks it
 never appears in a request). Beam Free is documented as *not used for training*, with 30-day retention;
 `iceman-contributor-free` trains on prompts and is deliberately not used.
 
 OpenCode Go is meant for "typical coding agent traffic". The buddy identifies itself (`goose-buddy/x.y`), sends a
-stable `x-opencode-session`, and stays low-volume (minimum 25 s between calls, 40 per hour). If you would rather not
+stable `x-opencode-session`, and stays low-volume (minimum 10 s between calls, 120 per hour; tune with `brain.minInterval` and `brain.maxPerHour`). If you would rather not
 use the model at all: `goose-buddy config brain.enabled=false`. Canned lines still work.
 
 ## Identity: "the same buddy as before"
@@ -124,3 +125,10 @@ A running pane and already-running goose sessions keep the old code until restar
 
 `pytest` (126 tests: golden vectors, rendering never overflows its width, classifier, the brain's privacy contract
 and API etiquette, the watcher against a session database, concurrent state access).
+
+
+## Variety
+Lines should not repeat: the last 12 shown lines are remembered, canned picks re-roll away from them, the model is
+told what it already said (and its reply is dropped if it repeats one), and each call gets a random style angle at
+temperature 1.0. Bursts of the same event (a worker pool committing all day) go quiet after the third one in ten
+minutes, then get a summary line on every fifth ("7 commits in 10 minutes").

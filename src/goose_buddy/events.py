@@ -17,10 +17,10 @@ from pathlib import Path
 from typing import Callable
 
 from . import memory, progress, state, suggestions
-from .brain import Brain
+from .brain import Brain, source_phrase
 from .feed import FeedReader
 from .engine import Companion
-from .reactions import (BAD, classify_output, combo_reaction, get_name_reaction, get_reaction,
+from .reactions import (BAD, BURST_TEXT, BURST_WINDOW, burst_reaction, classify_output, combo_reaction, get_name_reaction, get_reaction,
                         holiday_reaction, is_name_mentioned, pick_combo, recovery_reaction,
                         streak_reaction, time_reason)
 
@@ -49,6 +49,7 @@ class Watcher:
     def __init__(self, companion: Companion, db: Path | None = None, brain: Brain | None = None, feed_path: Path | None = None,
                  clock: Callable[[], float] = time.time, rng: Callable[[], float] = random.random,
                  new_session: bool = False) -> None:
+        self.bursts: dict[str, list[float]] = {}
         self.c, self.db, self.brain, self.clock, self.rng = companion, db or default_db(), brain, clock, rng
         self.streak = 0
         self.last_bad: tuple[str, float] | None = None
@@ -113,8 +114,8 @@ class Watcher:
                 r = self.react(reason, ctx)
                 if r:
                     shown.append(r)
-        for reason, _source in self.feed.read():
-            r = self.react(reason)
+        for reason, source in self.feed.read():
+            r = self.react(reason, source=source)
             if r:
                 shown.append(r)
             self.last_activity = self.clock()
@@ -215,14 +216,31 @@ class Watcher:
         last = state.load_reaction()
         return bool(last and self.clock() - last["timestamp"] < state.load_config()["commentCooldown"])
 
+    def _recent_lines(self) -> list[str]:
+        return [h["text"] for h in state.kv_get("history", [])]
+
+    def _remember(self, text: str, reason: str, replace: bool = False) -> None:
+        hist = state.kv_get("history", [])
+        if replace and hist:
+            hist.pop()
+        state.kv_set("history", (hist + [{"text": text, "reason": reason}])[-12:])
+
+    def _burst(self, reason: str) -> int:
+        """How many events of this reason (this one included) happened in the burst window."""
+        now = self.clock()
+        times = [t for t in self.bursts.get(reason, []) if now - t < BURST_WINDOW] + [now]
+        self.bursts[reason] = times
+        return len(times)
+
     def react(self, reason: str, ctx: dict[str, str] | None = None, force: bool = False,
-              text: str | None = None) -> dict | None:
+              text: str | None = None, source: str = "") -> dict | None:
         cfg = state.load_config()
         if reason in COUNTER_FOR:
             state.bump(COUNTER_FOR[reason])
         self.streak = self.streak + 1 if reason in BAD else 0
         self.recovered_from = None
         self._derived(reason)
+        n = self._burst(reason) if not force and reason in BURST_TEXT else 1
         if reason == "pet":
             state.bump("pets")
         notes = self.pending_notes + progress.record(self.c, reason, self.clock())
@@ -234,6 +252,19 @@ class Watcher:
             return None
         b = self.c.bones
         special = text is not None               # authored species lines the brain must not overwrite
+        if n >= 4 and n % 5 != 0:                # mid-burst: stay quiet; every 5th event gets a summary line
+            return None
+        recent = self._recent_lines()
+        facts: list[str] = []
+        phrase = source_phrase(source)
+        if phrase:
+            facts.append(phrase)
+        if n >= 3:
+            facts.append(f"this is event number {n} of the same kind in the last {int(BURST_WINDOW // 60)} minutes")
+        if self.streak >= 2 and reason in BAD:
+            facts.append(f"{self.streak} failures in a row")
+        if mood:
+            facts.append(f"your mood is {mood}")
         if text is not None:
             pass
         elif reason == "name":
@@ -241,7 +272,9 @@ class Watcher:
         elif reason == "credits":
             text = get_reaction("frustrated", b.species, b.rarity, b.stats, rng=self.rng)
         else:
-            text = get_reaction(reason, b.species, b.rarity, b.stats, ctx, self.rng)
+            text = get_reaction(reason, b.species, b.rarity, b.stats, ctx, self.rng, avoid=recent)
+            if n >= 5:
+                text = burst_reaction(reason, n, int(BURST_WINDOW // 60), self.rng, recent) or text
             combo = pick_combo(reason, self.clock(), self.clock() - self.session_start, self.rng)
             for line in (combo and combo_reaction(b.species, combo),
                          self.recovered_from and recovery_reaction(b.species, self.recovered_from),
@@ -251,17 +284,20 @@ class Watcher:
         if mood and not special and self.rng() < 0.3 and reason not in ("name", "credits"):
             text = f"{progress.MOOD_REACTIONS[mood]} {text}"     # upstream: 30% mood flavour
         shown = state.save_reaction(text, reason, "canned", self.clock())
+        self._remember(text, reason)
         state.bump("reactions_given")
         sug = self.pending_suggestion
         self.pending_suggestion = None
         if (sug and cfg["suggestionsEnabled"] and reason not in ("name", "credits", "pet")
                 and not suggestions.on_cooldown(cfg["suggestionCooldown"], self.clock())):
             suggestions.mark_suggested(self.clock())
+            self._remember(sug.message, "suggestion", replace=True)     # the suggestion is what the user sees
             return {**state.save_reaction(sug.message, "suggestion", "suggestion", self.clock()), "notes": notes}
         if self.brain and not special:           # upgrade the canned line if the brain answers in time
-            line = self.brain.react(self.c, reason)
+            line = self.brain.react(self.c, reason, facts, recent, self.rng)
             if line:
                 shown = state.save_reaction(line, reason, "brain", self.clock())
+                self._remember(line, reason, replace=True)
         return {**shown, "notes": notes}
 
     def _idle(self) -> dict | None:

@@ -66,7 +66,7 @@ def test_cooldown_throttles_bubbles_but_counters_still_count(db):
     assert state.counters()["tests_failed"] == 3
     clock[0] += 31
     add(db, "user", tool("4 failed"))
-    assert len(w.poll()) == 1
+    assert w.poll() == []                      # 4th in a burst stays quiet (see test_bursts_...)
 
 
 def test_unrecognised_failures_still_register_as_errors(db):
@@ -234,3 +234,43 @@ def test_settings_switch_off_mood_and_suggestions(db):
         assert (r["reason"] == "suggestion") is enabled
         if not enabled:
             assert not r["reaction"].startswith(("*blooms*", "*intensifies*", "*vibrates", "*yawns*", "*sighs", "*glitches*"))
+
+
+def test_bursts_go_quiet_then_summarise_every_fifth(db):
+    clock = [1000.0]
+    w = make(db, clock)
+    w.poll()
+    shown = []
+    for i in range(1, 11):
+        clock[0] += 31
+        add(db, "user", tool(f"{i} failed"))
+        shown.append(bool(w.poll()))
+    assert shown == [True, True, True, False, True, False, False, False, False, True]
+
+
+def test_burst_window_expires(db):
+    clock = [1000.0]
+    w = make(db, clock)
+    w.poll()
+    for _ in range(3):
+        clock[0] += 31
+        add(db, "user", tool("1 failed"))
+        w.poll()
+    clock[0] += 700
+    add(db, "user", tool("1 failed"))
+    assert w.poll()                            # a fresh burst, not the 4th of the old one
+
+
+def test_recent_lines_are_remembered_and_not_repeated(db):
+    clock = [1000.0]
+    import random
+    w = make(db, clock)
+    w.rng = random.Random(7).random
+    w.poll()
+    lines = []
+    for _ in range(3):
+        clock[0] += 31
+        add(db, "user", tool("1 failed"))
+        lines.append(w.poll()[0]["reaction"])
+    assert len(set(lines)) == 3
+    assert [h["text"] for h in state.kv_get("history")] == lines
