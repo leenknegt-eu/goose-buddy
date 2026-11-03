@@ -80,11 +80,12 @@ extensions:
 Done: engine, art and animation, widget, reactions, session watcher, brain, tmux pane, CLI, MCP extension,
 XP/levels/upgrades, moods, all 131 achievements, menagerie, suggestions, local project/bug/preference memory.
 Not yet ported: species-specific streak/combo/seasonal lines (goose only; others use generic lines), the
-`frequency`/`style`/`statusline` settings, brain-written name/personality at hatch, the code-analysis suggestions
-(long function, new file without test, rename sequence), XP for time spent, and the counters nothing feeds yet
-(marathon/holiday/spooky sessions, Friday pushes, branches and rebases).
+`frequency`/`style`/`statusline` settings, brain-written name/personality at hatch, and the code-analysis
+suggestions (long function, new file without test, rename sequence).
+Every achievement counter is now fed. Upstream never feeds `holiday_sessions`, `spooky_sessions` or
+`april_fools_errors` (those three achievements are unreachable there); goose-buddy derives them from the date.
 
 ## Tests
 
-`pytest` (101 tests: golden vectors, rendering never overflows its width, classifier, the brain's privacy contract
+`pytest` (104 tests: golden vectors, rendering never overflows its width, classifier, the brain's privacy contract
 and API etiquette, the watcher against a session database, concurrent state access).

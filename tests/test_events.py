@@ -145,3 +145,49 @@ def test_a_new_pane_skips_what_happened_while_it_was_closed(db):
     add(db, "user", tool("2 failed"))
     fresh = Watcher(Companion(generate_bones("x"), "H", "p", 0, "x"), db=db, clock=lambda: 2000.0, new_session=True)
     assert fresh.poll() == []                          # the failure happened before this pane opened
+
+
+def test_derived_counters_recoveries_and_marathon(db, monkeypatch):
+    import time as _t
+    clock = [_t.mktime((2026, 11, 6, 2, 0, 0, 0, 0, -1))]          # a Friday, 02:00
+    w = make(db, clock)
+    w.react("commit", force=True)
+    w.react("push", force=True)
+    assert state.counters()["late_night_commits"] == 1 and state.counters()["friday_pushes"] == 1
+    w.react("error", force=True)
+    clock[0] += 120
+    w.react("all-green", force=True)                                # fixed within ten minutes
+    assert state.counters()["recoveries"] == 1
+    clock[0] += 4 * 3600                                            # four hours in
+    w.react("error", force=True)
+    clock[0] += 60
+    w.react("all-green", force=True)
+    c = state.counters()
+    assert c["marathon_errors"] == 1 and c["marathon_recoveries"] == 1
+    w.react("error", force=True); clock[0] += 3000 + 700
+    w.react("all-green", force=True)
+    assert state.counters()["recoveries"] == 2                      # too slow: not a recovery
+
+
+def test_error_streak_high_water_mark_and_april_fools(db):
+    import time as _t
+    clock = [_t.mktime((2026, 4, 1, 12, 0, 0, 0, 0, -1))]
+    w = make(db, clock)
+    for _ in range(4):
+        w.react("error", force=True)
+    w.react("all-green", force=True)
+    assert state.counters()["max_error_streak"] == 4 and state.counters()["april_fools_errors"] == 4
+
+
+def test_holiday_and_spooky_sessions_and_time_spent_xp(db):
+    import time as _t
+    from goose_buddy import progress
+    clock = [_t.mktime((2026, 10, 31, 12, 0, 0, 0, 0, -1))]
+    w = Watcher(Companion(generate_bones("x"), "H", "p", 0, "x"), db=db, clock=lambda: clock[0], new_session=True)
+    assert state.counters()["holiday_sessions"] == 1 and state.counters()["spooky_sessions"] == 1
+    w.poll()
+    before = progress.xp_state()["totalXp"]
+    add(db, "assistant", {"type": "text", "text": "hi"})
+    clock[0] += 150                                                 # two active minutes
+    w.poll()
+    assert progress.xp_state()["totalXp"] - before >= 4

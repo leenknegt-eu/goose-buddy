@@ -25,7 +25,13 @@ from .reactions import (BAD, classify_output, get_name_reaction, get_reaction, i
 COUNTER_FOR = {"error": "errors_seen", "test-fail": "tests_failed", "large-diff": "large_diffs",
                "commit": "commits_made", "push": "pushes_made", "merge-conflict": "conflicts_resolved",
                "build-fail": "build_fails", "type-error": "type_errors", "lint-fail": "lint_fails",
-               "all-green": "all_green", "deploy": "deploys", "release": "releases"}
+               "all-green": "all_green", "deploy": "deploys", "release": "releases", "branch": "branches_created",
+               "rebase": "rebases_done", "security-warning": "security_warnings",
+               "deprecation": "deprecations_seen"}
+HOLIDAYS = {(1, 1), (2, 14), (3, 14), (4, 1), (10, 31), (12, 25), (12, 31)}   # upstream's holiday list
+MARATHON = 3 * 3600            # upstream: "three hours in"
+RECOVERY_WINDOW = 600
+GOOD = ("all-green", "success", "deploy", "release")
 
 
 def default_db() -> Path:
@@ -43,6 +49,9 @@ class Watcher:
                  new_session: bool = False) -> None:
         self.c, self.db, self.brain, self.clock, self.rng = companion, db or default_db(), brain, clock, rng
         self.streak = 0
+        self.last_bad: tuple[str, float] | None = None
+        self.last_xp_tick = clock()
+        self.marathon_counted = False
         self.pending_notes: list[str] = []
         self.pending_suggestion: suggestions.Suggestion | None = None
         self.session_start = clock()
@@ -64,6 +73,10 @@ class Watcher:
             state.bump("early_sessions")
         if t.tm_wday >= 5:
             state.bump("weekend_sessions")
+        if (t.tm_mon, t.tm_mday) in HOLIDAYS:
+            state.bump("holiday_sessions")
+        if t.tm_mon == 10:
+            state.bump("spooky_sessions")
         progress.track_active_day(self.clock())
 
     # -- database ---------------------------------------------------------------------------
@@ -99,6 +112,13 @@ class Watcher:
         if rows:
             state.kv_set("watch", {"last_id": self.last_id})
             self.last_activity = self.clock()
+            minutes = min(5, int((self.clock() - self.last_xp_tick) // 60))
+            if minutes:                          # 2 XP per active minute (idle time earns nothing)
+                self.last_xp_tick = self.clock()
+                self.pending_notes += progress.award_xp("time_spent", self.c, 2 * minutes)[1]
+            if not self.marathon_counted and self.clock() - self.session_start > MARATHON:
+                self.marathon_counted = True
+                state.bump("marathon_sessions")
         else:
             idle = self._idle()
             if idle:
@@ -133,6 +153,35 @@ class Watcher:
         # A streak counts consecutive bad results; anything else resets it.
         return out
 
+    def _derived(self, reason: str) -> None:
+        """Counters upstream derives from combinations of event, clock and session length."""
+        now = self.clock()
+        t = time.localtime(now)
+        marathon = now - self.session_start > MARATHON
+        if reason == "commit" and t.tm_hour < 5:
+            state.bump("late_night_commits")
+        if reason == "push" and t.tm_wday == 4:
+            state.bump("friday_pushes")
+        if reason in ("error", "type-error", "build-fail", "lint-fail") and marathon:
+            state.bump("marathon_errors")
+        if reason == "error" and (t.tm_mon, t.tm_mday) == (4, 1):
+            state.bump("april_fools_errors")
+        if reason == "merge-conflict" and t.tm_wday >= 5:
+            state.bump("weekend_conflicts")
+        if self.streak > state.counters().get("max_error_streak", 0):
+            with state.locked():
+                ev = state.counters()
+                ev["max_error_streak"] = self.streak
+                state.kv_set("events", ev)
+        if reason in ("error", "test-fail", "build-fail", "merge-conflict"):
+            self.last_bad = (reason, now)
+        elif reason in GOOD and self.last_bad:
+            if now - self.last_bad[1] < RECOVERY_WINDOW:
+                state.bump("recoveries")
+                if marathon:
+                    state.bump("marathon_recoveries")
+            self.last_bad = None
+
     def _learn(self, text: str, reason: str | None) -> None:
         """Local-only pattern checks over a tool result: memory, repeated errors, TODOs, test activity."""
         if reason in ("test-fail", "all-green"):
@@ -159,6 +208,7 @@ class Watcher:
         if reason in COUNTER_FOR:
             state.bump(COUNTER_FOR[reason])
         self.streak = self.streak + 1 if reason in BAD else 0
+        self._derived(reason)
         if reason == "pet":
             state.bump("pets")
         notes = self.pending_notes + progress.record(self.c, reason, self.clock())
