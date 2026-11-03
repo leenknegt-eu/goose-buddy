@@ -95,8 +95,13 @@ class Watcher:
                 self.last_id = con.execute("select coalesce(max(id), 0) from messages").fetchone()[0]
                 state.kv_set("watch", {"last_id": self.last_id})
                 return []
-            return con.execute("select id, role, content_json from messages where id > ? "
-                               "order by id limit 300", (self.last_id,)).fetchall()
+            try:                                 # the session name tells quiet sessions apart
+                return con.execute("select m.id, m.role, m.content_json, s.name as session_name from messages m "
+                                   "left join sessions s on s.id = m.session_id where m.id > ? "
+                                   "order by m.id limit 300", (self.last_id,)).fetchall()
+            except sqlite3.OperationalError:     # no sessions table (old goose): nothing can be quiet
+                return con.execute("select id, role, content_json, null as session_name from messages "
+                                   "where id > ? order by id limit 300", (self.last_id,)).fetchall()
         finally:
             con.close()
 
@@ -104,8 +109,12 @@ class Watcher:
         """Process new messages; return the reactions shown (dicts with reaction/reason/source)."""
         shown: list[dict] = []
         rows = self._rows()
+        quiet = tuple(state.load_config()["quietSessions"])
         for row in rows:
             self.last_id = row["id"]
+            name = row["session_name"] or ""
+            if quiet and name.startswith(quiet):  # e.g. decomp workers: the feed reports what matters
+                continue
             try:
                 parts = json.loads(row["content_json"])
             except ValueError:

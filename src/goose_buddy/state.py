@@ -28,6 +28,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "moodEnabled": True,         # mood flourishes on reactions
     "suggestionsEnabled": True,  # proactive nudges
     "suggestionCooldown": 180,   # seconds between nudges
+    # Sessions whose name starts with one of these are ignored by the watcher: their tool output (compiler
+    # errors, disassembly) reads as git/CI noise. Their real events arrive through the feed instead.
+    "quietSessions": ["Decompilation Worker", "Decompilation Head"],
     "species_pool": "original",  # "original" (18, Claude Code's) or "coding-buddy" (20)
     "species_override": "",      # e.g. "goose": force the species, keep every other roll
     "user_id": "",               # explicit identity seed; empty = read ~/.claude.json

@@ -274,3 +274,47 @@ def test_recent_lines_are_remembered_and_not_repeated(db):
         lines.append(w.poll()[0]["reaction"])
     assert len(set(lines)) == 3
     assert [h["text"] for h in state.kv_get("history")] == lines
+
+
+def test_quiet_sessions_are_ignored_but_others_still_react(db):
+    con = sqlite3.connect(db)
+    con.execute("create table sessions (id text primary key, name text, session_type text)")
+    con.executemany("insert into sessions values (?,?,?)",
+                    [("w", "Decompilation Worker Agent (f3decomp)", "hidden"), ("h", "Decompilation Head Agent", "user"),
+                     ("me", "fix the parser", "user")])
+    con.commit()
+    con.close()
+    clock = [1000.0]
+    w = make(db, clock)
+    w.poll()
+
+    def add_to(session, text):
+        c = sqlite3.connect(db)
+        c.execute("insert into messages (session_id, role, content_json) values (?, 'user', ?)",
+                  (session, json.dumps([tool(text)])))
+        c.commit()
+        c.close()
+    for sid in ("w", "h"):
+        add_to(sid, "push ebp\nerror: C2065 undeclared identifier\n2 failed")
+    assert w.poll() == []                              # worker and head output is noise to the buddy
+    assert state.counters().get("errors_seen", 0) == 0 and state.counters().get("tests_failed", 0) == 0
+    clock[0] += 31
+    add_to("me", "2 failed")
+    assert len(w.poll()) == 1                          # a normal session still reacts
+    assert state.counters()["tests_failed"] == 1
+
+
+def test_quiet_list_is_configurable(db):
+    con = sqlite3.connect(db)
+    con.execute("create table sessions (id text primary key, name text, session_type text)")
+    con.execute("insert into sessions values ('w', 'Decompilation Worker Agent', 'hidden')")
+    con.commit()
+    con.close()
+    state.save_config(quietSessions=[])
+    w = make(db, [1000.0])
+    w.poll()
+    c = sqlite3.connect(db)
+    c.execute("insert into messages (session_id, role, content_json) values ('w', 'user', ?)", (json.dumps([tool("2 failed")]),))
+    c.commit()
+    c.close()
+    assert len(w.poll()) == 1                          # with the list emptied, the worker is heard again

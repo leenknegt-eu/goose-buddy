@@ -132,3 +132,11 @@ Lines should not repeat: the last 12 shown lines are remembered, canned picks re
 told what it already said (and its reply is dropped if it repeats one), and each call gets a random style angle at
 temperature 1.0. Bursts of the same event (a worker pool committing all day) go quiet after the third one in ten
 minutes, then get a summary line on every fifth ("7 commits in 10 minutes").
+
+## Quiet sessions
+The tool-output classifier reads human coding sessions: `error:`, `push`, `v1.2` and `To …:` mean git and CI. Machine
+workloads break that (a decompilation worker's compiler errors and `push ebp` disassembly looked like a failing
+build and a git push, and made the buddy frantic). Sessions whose name starts with one of `quietSessions` are ignored
+by the watcher; the default is the decomp worker and head. Their meaningful events (submissions, verdicts, give-ups,
+errors) come through the [event feed](#event-feed) instead. Change it with
+`goose-buddy config quietSessions='["Name prefix", ...]'`; `[]` hears everything.
