@@ -89,6 +89,16 @@ Upstream never feeds `holiday_sessions`, `spooky_sessions` or `april_fools_error
 are unreachable there); goose-buddy derives them from the date.
 Not applicable here: the `statusline` settings (goose has no status line; the tmux pane replaces it).
 
+## Updating
+
+On the machine that runs it: `scripts/update.sh` (fast-forward pull, reinstall, `doctor`). It refuses to run
+over local changes and never touches goose's config or the buddy's state. For a devbox reached through an ssh
+alias that attaches tmux, run it in the container, for example:
+
+    ssh -o RemoteCommand=none -o RequestTTY=no devbox 'docker exec -u dev devbox-dev /work/GitHub/goose-buddy/scripts/update.sh'
+
+A running pane and already-running goose sessions keep the old code until restarted.
+
 ## Tests
 
 `pytest` (115 tests: golden vectors, rendering never overflows its width, classifier, the brain's privacy contract
